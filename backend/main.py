@@ -11,6 +11,7 @@ import asyncio
 import json
 import time
 import random
+import os
 from datetime import datetime
 from typing import AsyncGenerator
 
@@ -26,17 +27,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configure CORS
+# Configure CORS - Allow all origins for deployment
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",      # Next.js default
-        "http://localhost:5173",      # Vite default
-        "http://127.0.0.1:5173",      # Alternative localhost
-        "http://localhost:4173",      # Vite preview
-        "https://*.vercel.app",       # Vercel deployments
-        "https://*.netlify.app",      # Netlify deployments
-    ],
+    allow_origins=["*"],  # Allow all origins for deployment
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -123,7 +117,8 @@ async def root():
         "endpoints": {
             "health": "/health",
             "logs_stream": "/logs/stream"
-        }
+        },
+        "deployment": "production" if os.getenv("PORT") else "development"
     }
 
 
@@ -133,7 +128,8 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "service": "log-streaming-backend"
+        "service": "log-streaming-backend",
+        "port": os.getenv("PORT", "8000")
     }
 
 
@@ -222,10 +218,13 @@ async def stream_logs():
 if __name__ == "__main__":
     import uvicorn
     
+    # Use PORT environment variable if available (for cloud deployment)
+    port = int(os.getenv("PORT", 8000))
+    
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=True,
         log_level="info"
     ) 
