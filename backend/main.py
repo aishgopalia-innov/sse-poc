@@ -37,76 +37,83 @@ app.add_middleware(
 )
 
 # Sample data for realistic log generation
-MODULE_NAMES = [
-    "py-quality", "py-measure-definition", "py-data-processor", 
-    "py-analytics", "py-validator", "py-transformer"
+LOG_MESSAGES = [
+    "job update response status: FAILURE, response: <Response [200]>",
+    "job update response status: SUCCESS, response: <Response [200]>",
+    "Publish report status: True, response: Report has been published for pipeline :: {pipeline_id}",
+    "Error -> Error  : ETL Error  : ETL stopped due to PRE-CHECK error: Error in DQF Pre-Check check: DQF Pre-Check returned empty status",
+    "Executing from the start as changes found in the code",
+    "{step}. Running ETL for snowflake",
+    "connect to database - snowflake",
+    "L5 tag version:{tag} is running",
+    "ETL Running",
+    "Starting L5 DAP",
+    "JSON data is valid",
+    "Total time for L5 execution = {duration} seconds",
+    "L5 execution ended",
+    "L5 (standard) data population ended"
 ]
 
-EVENT_TYPES = ["FUNCTION", "METADATA", "BATCH"]
+LOG_LEVELS = ["INFO", "ERROR", "WARN", "DEBUG"]
+LOG_TYPES = ["THIRD_PARTY_LIBRARY", "APPLICATION", "SYSTEM"]
+STAGE_NAMES = ["PLATFORM_INTERNAL", "ETL_PROCESSING", "DATA_VALIDATION", "REPORTING"]
 
-STATUSES = [
-    "FINISHED", "RUNNING", "PARTIALLY_COMPLETED", "FAILURE", 
-    "TERMINATED", "NOT_FOUND", "FAILED"
+# Pipeline IDs for realistic data
+PIPELINE_IDS = [
+    "70ae99a3-9260-4435-b13a-1f3abfc2a77f",
+    "85bc12d4-a371-4546-c24b-2g4bcgd3b88g", 
+    "92cd23e5-b482-5657-d35c-3h5cdhe4c99h",
+    "a7de34f6-c593-6768-e46d-4i6deif5da0i"
 ]
 
-CONFIG_IDS = [
-    "loadtest_nonkeda_10k", "production_batch_5k", "dev_test_1k",
-    "staging_validation", "performance_test"
-]
+EXEC_IDS = ["3920", "3953", "4021", "4087", "4156"]
 
-def generate_event_details(event_type, status, module_name):
-    """Generate realistic event details based on type and status"""
-    base_time = datetime.utcnow().isoformat() + "Z"
+def generate_log_entry():
+    """Generate a realistic log entry in the new format"""
+    now = datetime.utcnow()
+    iso_time = now.isoformat() + "000"  # Add milliseconds
+    timestamp = int(now.timestamp() * 1000)  # Milliseconds since epoch
     
-    if event_type == "FUNCTION":
-        return {
-            "deploymentId": f"{random.randint(100000, 999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(100000000000, 999999999999)}",
-            "name": module_name,
-            "version": f"{random.randint(1, 5)}.{random.randint(0, 10)}.{random.randint(0, 100)}-feature.{random.randint(1, 100)}",
-            "minReplicas": 1,
-            "maxReplicas": random.choice([1000, 2000, 3000]),
-            "stateFlow": ["PENDING", "RUNNING"] if status == "RUNNING" else ["PENDING", "RUNNING", "FINISHED"],
-            "targetCPUPercent": f"{random.randint(5, 20)}.0 %",
-            "limits": {"cpu": f"{random.randint(1000, 4000)}m", "memory": f"{random.randint(2, 8)}G"},
-            "requests": {"cpu": f"{random.randint(1000, 4000)}m", "memory": f"{random.randint(2, 8)}G"},
-            "environment": [{"key": "POD_MEMORY_LIMIT", "value": str(random.randint(2048, 8192))}],
-            "faasApiFunctionDeploymentFlag": False,
-            "inDBFunctionDeploymentFlag": True
-        }
+    # Format time as "Sep 11 2025 at 03:10 PM"
+    formatted_time = now.strftime("%b %d %Y at %I:%M %p")
     
-    elif event_type == "METADATA":
-        return {
-            "name": module_name,
-            "version": f"{random.randint(1, 5)}.{random.randint(0, 10)}.{random.randint(0, 100)}-feature.{random.randint(1, 100)}",
-            "stateFlow": ["PENDING", "EXECUTING", "RUNNING", "DUMP_TO_SF"],
-            "environment": [{"key": "DEBUG", "value": "true"}]
-        }
+    # Select random data
+    exec_id = random.choice(EXEC_IDS)
+    pipeline_id = random.choice(PIPELINE_IDS)
+    log_level = random.choice(LOG_LEVELS)
+    log_type = random.choice(LOG_TYPES)
+    stage_name = random.choice(STAGE_NAMES)
     
-    elif event_type == "BATCH":
-        execution_id = f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(100000000000, 999999999999)}"
-        invocation_count = random.randint(1000, 10000) if status not in ["FAILURE", "TERMINATED"] else 0
-        success_count = random.randint(int(invocation_count * 0.8), invocation_count) if invocation_count > 0 else 0
-        failure_count = invocation_count - success_count if invocation_count > 0 else 0
-        
-        return {
-            "executionId": execution_id,
-            "status": status,
-            "info": "Publishing payload to nats" if status in ["QUEUED", "EXECUTING"] else None,
-            "configId": random.choice(CONFIG_IDS),
-            "userQuery": f"SELECT DISTINCT record_content:data[0]:empi AS empi FROM l3.output_status WHERE execution_id = '{execution_id}' LIMIT {invocation_count}",
-            "invocationCount": invocation_count,
-            "stateFlow": ["SUBMITTED", "ENQUEUEING", "QUEUED", "EXECUTING"] if status == "RUNNING" else ["SUBMITTED", "ENQUEUEING", "QUEUED", "EXECUTING", status],
-            "failure": failure_count,
-            "success": success_count,
-            "writeOutputToDb": random.randint(0, 500),
-            "totalCPU": f"{random.uniform(0, 10):.1f} Cores",
-            "totalMemory": f"{random.uniform(0, 50):.1f} GB",
-            "totalPods": random.randint(0, 20),
-            "startTime": base_time,
-            "endTime": base_time,
-            "totalTimeRunInSeconds": f"{random.uniform(1, 180):.2f} minutes",
-            "isBulkExecution": False
-        }
+    # Select and format message
+    message_template = random.choice(LOG_MESSAGES)
+    
+    # Format message with dynamic values
+    if "{pipeline_id}" in message_template:
+        message = message_template.format(pipeline_id=pipeline_id)
+    elif "{step}" in message_template:
+        message = message_template.format(step=random.randint(1, 10))
+    elif "{tag}" in message_template:
+        message = message_template.format(tag=f"v{random.randint(1, 5)}.{random.randint(0, 10)}")
+    elif "{duration}" in message_template:
+        message = message_template.format(duration=round(random.uniform(100, 3000), 2))
+    else:
+        message = message_template
+    
+    return {
+        "description": message,
+        "duration": "0 sec",
+        "isoTime": iso_time,
+        "logLevel": log_level,
+        "logType": log_type,
+        "message": message,
+        "meta": {
+            "execID": exec_id,
+            "pipelineID": pipeline_id,
+            "timestamp": timestamp
+        },
+        "stageName": stage_name,
+        "time": formatted_time
+    }
 
 
 @app.get("/")
@@ -144,30 +151,12 @@ async def generate_logs() -> AsyncGenerator[str, None]:
     
     while True:
         try:
-            # Create log message with realistic data
-            module_name = random.choice(MODULE_NAMES)
-            event_type = random.choice(EVENT_TYPES)
-            status = random.choice(STATUSES)
-            
-            # Generate event ID
-            event_id = f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(100000000000, 999999999999)}"
-            
-            # Generate event details
-            event_details = generate_event_details(event_type, status, module_name)
-            
-            log_data = {
-                "eventId": event_id,
-                "moduleName": module_name,
-                "eventType": event_type,
-                "status": status,
-                "eventDetails": json.dumps(event_details),
-                "createTime": int(time.time() * 1000),  # Milliseconds since epoch
-                "userDetails": {}
-            }
+            # Generate log entry in new format
+            log_entry = generate_log_entry()
             
             # Format as SSE message
             # SSE format: data: <json_data>\n\n
-            sse_message = f"data: {json.dumps(log_data)}\n\n"
+            sse_message = f"data: {json.dumps(log_entry)}\n\n"
             
             yield sse_message
             
@@ -179,13 +168,19 @@ async def generate_logs() -> AsyncGenerator[str, None]:
         except Exception as e:
             # Send error message if something goes wrong
             error_data = {
-                "eventId": f"error-{log_counter}",
-                "moduleName": "system",
-                "eventType": "ERROR",
-                "status": "FAILED",
-                "eventDetails": json.dumps({"error": str(e)}),
-                "createTime": int(time.time() * 1000),
-                "userDetails": {}
+                "description": f"System error: {str(e)}",
+                "duration": "0 sec",
+                "isoTime": datetime.utcnow().isoformat() + "000",
+                "logLevel": "ERROR",
+                "logType": "SYSTEM",
+                "message": f"System error: {str(e)}",
+                "meta": {
+                    "execID": "error",
+                    "pipelineID": "system",
+                    "timestamp": int(time.time() * 1000)
+                },
+                "stageName": "SYSTEM",
+                "time": datetime.utcnow().strftime("%b %d %Y at %I:%M %p")
             }
             
             error_message = f"data: {json.dumps(error_data)}\n\n"

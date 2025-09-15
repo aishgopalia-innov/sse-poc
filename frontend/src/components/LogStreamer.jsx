@@ -8,13 +8,16 @@ import {
     Column,
     StatusHint,
     Icon,
-    Tooltip
+    Tooltip,
+    Toast
 } from '@innovaccer/design-system'
 import moment from 'moment'
 import './LogStreamer.css'
 
 const LogStreamer = () => {
     const [logs, setLogs] = useState([])
+    const [groupedLogs, setGroupedLogs] = useState({})
+    const [toasts, setToasts] = useState([])
     const [isConnected, setIsConnected] = useState(false)
     const [connectionStatus, setConnectionStatus] = useState('disconnected')
     const [error, setError] = useState(null)
@@ -22,24 +25,73 @@ const LogStreamer = () => {
     const eventSourceRef = useRef(null)
     const reconnectTimeoutRef = useRef(null)
     const reconnectAttempts = useRef(0)
+    const toastIdCounter = useRef(0)
+    const recentToasts = useRef(new Map()) // Track recent toasts to prevent duplicates
 
     // Get backend URL from environment variables
     const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
     const maxReconnectAttempts = 5
 
+    // Function to show toast notification with duplicate prevention
+    const showToast = (execId, pipelineId, message, logLevel) => {
+        const now = Date.now()
+        const toastKey = `${execId}-${message.substring(0, 50)}` // Use execId + partial message as key
+
+        // Check if we've shown a similar toast recently (within 2 seconds)
+        if (recentToasts.current.has(toastKey)) {
+            const lastToastTime = recentToasts.current.get(toastKey)
+            if (now - lastToastTime < 2000) {
+                console.log(`Preventing duplicate toast for execID: ${execId}`)
+                return // Don't show duplicate toast
+            }
+        }
+
+        // Record this toast
+        recentToasts.current.set(toastKey, now)
+
+        const toastId = `toast-${toastIdCounter.current++}`
+        const appearance = getLogLevelAppearance(logLevel)
+
+        const newToast = {
+            id: toastId,
+            title: `New event for Exec ID: ${execId}`,
+            message: message.length > 80 ? `${message.substring(0, 80)}...` : message,
+            appearance: appearance
+        }
+
+        setToasts(prev => [...prev, newToast])
+
+        // Auto-remove toast after 5 seconds
+        setTimeout(() => {
+            setToasts(prev => prev.filter(toast => toast.id !== toastId))
+        }, 5000)
+
+        // Clean up old entries from recentToasts map (older than 10 seconds)
+        setTimeout(() => {
+            const cutoff = Date.now() - 10000
+            for (const [key, timestamp] of recentToasts.current.entries()) {
+                if (timestamp < cutoff) {
+                    recentToasts.current.delete(key)
+                }
+            }
+        }, 10000)
+    }
+
+    // Function to dismiss toast
+    const dismissToast = (toastId) => {
+        setToasts(prev => prev.filter(toast => toast.id !== toastId))
+    }
+
     const formatTimestamp = (timestamp) => {
         return moment(timestamp).format('MMM DD, YYYY HH:mm:ss')
     }
 
-    const getStatusAppearance = (status) => {
-        switch (status) {
-            case 'FINISHED': return 'success'
-            case 'RUNNING': return 'info'
-            case 'PARTIALLY_COMPLETED': return 'warning'
-            case 'FAILURE':
-            case 'FAILED': return 'alert'
-            case 'TERMINATED': return 'warning'
-            case 'NOT_FOUND': return 'alert'
+    const getLogLevelAppearance = (logLevel) => {
+        switch (logLevel) {
+            case 'INFO': return 'success'
+            case 'WARN': return 'warning'
+            case 'ERROR': return 'alert'
+            case 'DEBUG': return 'subtle'
             default: return 'subtle'
         }
     }
@@ -54,12 +106,11 @@ const LogStreamer = () => {
         }
     }
 
-    const getEventTypeIcon = (eventType) => {
-        switch (eventType) {
-            case 'FUNCTION': return 'code'
-            case 'METADATA': return 'info'
-            case 'BATCH': return 'layers'
-            case 'ERROR': return 'error'
+    const getLogTypeIcon = (logType) => {
+        switch (logType) {
+            case 'THIRD_PARTY_LIBRARY': return 'extension'
+            case 'APPLICATION': return 'apps'
+            case 'SYSTEM': return 'settings'
             default: return 'event_note'
         }
     }
@@ -95,9 +146,40 @@ const LogStreamer = () => {
 
                     setLogs(prevLogs => {
                         const newLogs = [logData, ...prevLogs]
-                        // Keep only the last 50 logs to prevent memory issues
-                        return newLogs.slice(0, 50)
+                        // Keep only the last 100 logs to prevent memory issues
+                        return newLogs.slice(0, 100)
                     })
+
+                    // Update grouped logs by execID and handle notifications
+                    const execId = logData.meta?.execID
+                    if (execId) {
+                        setGroupedLogs(prevGrouped => {
+                            const newGrouped = { ...prevGrouped }
+                            const wasExisting = newGrouped[execId] && newGrouped[execId].length > 0
+
+                            if (!newGrouped[execId]) {
+                                newGrouped[execId] = []
+                            }
+
+                            // Add new log to the beginning of the execID group
+                            newGrouped[execId] = [logData, ...newGrouped[execId]].slice(0, 20) // Keep max 20 logs per execID
+
+                            // Show toast notification for new events on existing execIDs
+                            if (wasExisting) {
+                                console.log(`New event for existing execID: ${execId}`)
+                                showToast(
+                                    execId,
+                                    logData.meta?.pipelineID,
+                                    logData.message,
+                                    logData.logLevel
+                                )
+                            } else {
+                                console.log(`First event for execID: ${execId}`)
+                            }
+
+                            return newGrouped
+                        })
+                    }
 
                 } catch (parseError) {
                     console.error('Error parsing log data:', parseError)
@@ -152,6 +234,9 @@ const LogStreamer = () => {
 
     const clearLogs = () => {
         setLogs([])
+        setGroupedLogs({})
+        setToasts([])
+        recentToasts.current.clear() // Clear duplicate prevention map
     }
 
     const testBackendHealth = async () => {
@@ -268,55 +353,80 @@ const LogStreamer = () => {
                         <div className="table-header">
                             <div className="table-cell">
                                 <Icon name="category" size={16} />
-                                <Text weight="medium">Type</Text>
+                                <Text weight="medium">Log Level</Text>
                             </div>
                             <div className="table-cell">
                                 <Icon name="extension" size={16} />
-                                <Text weight="medium">Module</Text>
-                            </div>
-                            <div className="table-cell">
-                                <Icon name="flag" size={16} />
-                                <Text weight="medium">Status</Text>
+                                <Text weight="medium">Log Type</Text>
                             </div>
                             <div className="table-cell">
                                 <Icon name="fingerprint" size={16} />
-                                <Text weight="medium">Event ID</Text>
+                                <Text weight="medium">Exec ID</Text>
+                            </div>
+                            <div className="table-cell">
+                                <Icon name="layers" size={16} />
+                                <Text weight="medium">Stage</Text>
+                            </div>
+                            <div className="table-cell">
+                                <Icon name="description" size={16} />
+                                <Text weight="medium">Message</Text>
                             </div>
                             <div className="table-cell">
                                 <Icon name="schedule" size={16} />
-                                <Text weight="medium">Created</Text>
+                                <Text weight="medium">Time</Text>
                             </div>
                         </div>
                         {logs.map((log, index) => (
-                            <div key={`${log.eventId}-${index}`} className="table-row" data-event-type={log.eventType}>
+                            <div key={`${log.meta?.execID}-${log.meta?.timestamp}-${index}`} className="table-row" data-log-level={log.logLevel}>
                                 <div className="table-cell">
-                                    <Icon name={getEventTypeIcon(log.eventType)} size={16} appearance="subtle" />
-                                    <Text>{log.eventType}</Text>
-                                </div>
-                                <div className="table-cell">
-                                    <Text weight="medium">{log.moduleName}</Text>
-                                </div>
-                                <div className="table-cell">
-                                    <StatusHint appearance={getStatusAppearance(log.status)}>
-                                        {log.status}
+                                    <StatusHint appearance={getLogLevelAppearance(log.logLevel)}>
+                                        {log.logLevel}
                                     </StatusHint>
                                 </div>
                                 <div className="table-cell">
-                                    <Tooltip tooltip={log.eventId}>
-                                        <Text appearance="subtle" className="event-id-text">
-                                            {log.eventId.substring(0, 8)}...
+                                    <Icon name={getLogTypeIcon(log.logType)} size={16} appearance="subtle" />
+                                    <Text>{log.logType}</Text>
+                                </div>
+                                <div className="table-cell">
+                                    <Tooltip tooltip={`Pipeline: ${log.meta?.pipelineID}`}>
+                                        <Text weight="medium" className="exec-id-text">
+                                            {log.meta?.execID}
+                                        </Text>
+                                    </Tooltip>
+                                </div>
+                                <div className="table-cell">
+                                    <Text appearance="subtle">{log.stageName}</Text>
+                                </div>
+                                <div className="table-cell message-cell">
+                                    <Tooltip tooltip={log.message}>
+                                        <Text className="message-text">
+                                            {log.message.length > 60 ? `${log.message.substring(0, 60)}...` : log.message}
                                         </Text>
                                     </Tooltip>
                                 </div>
                                 <div className="table-cell">
                                     <Text appearance="subtle" size="small">
-                                        {formatTimestamp(log.createTime)}
+                                        {log.time}
                                     </Text>
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
+            </div>
+
+            {/* Toast notifications container */}
+            <div className="toast-container">
+                {toasts.map((toast) => (
+                    <Toast
+                        key={toast.id}
+                        appearance={toast.appearance}
+                        title={toast.title}
+                        message={toast.message}
+                        actions={toast.actions}
+                        onClose={() => dismissToast(toast.id)}
+                    />
+                ))}
             </div>
         </Card>
     )
