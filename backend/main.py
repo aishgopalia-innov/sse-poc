@@ -15,7 +15,7 @@ import os
 from datetime import datetime
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -69,12 +69,12 @@ PIPELINE_IDS = [
 EXEC_IDS = ["3920", "3953", "4021", "4087", "4156"]
 
 def generate_log_entry():
-    """Generate a realistic log entry in the new format"""
+    """Generate a realistic log entry matching Datashop logs schema"""
     now = datetime.utcnow()
     iso_time = now.isoformat() + "000"  # Add milliseconds
     timestamp = int(now.timestamp() * 1000)  # Milliseconds since epoch
     
-    # Format time as "Sep 11 2025 at 03:10 PM"
+    # Format time for Datashop (they expect date field)
     formatted_time = now.strftime("%b %d %Y at %I:%M %p")
     
     # Select random data
@@ -99,20 +99,37 @@ def generate_log_entry():
     else:
         message = message_template
     
+    # Generate duration string
+    duration_seconds = random.randint(1, 300)
+    if duration_seconds < 60:
+        duration = f"{duration_seconds} sec"
+    else:
+        minutes = duration_seconds // 60
+        seconds = duration_seconds % 60
+        duration = f"{minutes}m {seconds}s"
+    
+    # Return in Datashop schema format
     return {
+        # Datashop expected fields
+        "date": formatted_time,
+        "level": log_level,
+        "pipeline": stage_name,
+        "status": duration,
+        "message": message,
+        
+        # Keep original fields for compatibility if needed
         "description": message,
-        "duration": "0 sec",
+        "duration": duration,
         "isoTime": iso_time,
         "logLevel": log_level,
         "logType": log_type,
-        "message": message,
+        "stageName": stage_name,
+        "time": formatted_time,
         "meta": {
             "execID": exec_id,
             "pipelineID": pipeline_id,
             "timestamp": timestamp
-        },
-        "stageName": stage_name,
-        "time": formatted_time
+        }
     }
 
 
@@ -140,23 +157,40 @@ async def health_check():
     }
 
 
-async def generate_logs() -> AsyncGenerator[str, None]:
+async def generate_logs(last_event_id: str | None = None) -> AsyncGenerator[str, None]:
     """
     Generate log messages every 5 seconds in SSE format.
     
     Yields:
         str: SSE-formatted log messages
     """
-    log_counter = 1
+    # If client sent Last-Event-ID, we could resume from there. For demo, we just log it.
+    if last_event_id:
+        try:
+            _ = int(last_event_id)
+        except ValueError:
+            # Ignore invalid IDs in demo
+            pass
+
+    log_counter = 1 if not last_event_id else (int(last_event_id) + 1 if last_event_id.isdigit() else 1)
+
+    last_heartbeat = time.time()
+    heartbeat_interval_seconds = 25
     
     while True:
         try:
+            # Heartbeat to keep proxies from closing idle connections
+            now = time.time()
+            if now - last_heartbeat >= heartbeat_interval_seconds:
+                yield ":ping\n\n"
+                last_heartbeat = now
+
             # Generate log entry in new format
             log_entry = generate_log_entry()
             
             # Format as SSE message
-            # SSE format: data: <json_data>\n\n
-            sse_message = f"data: {json.dumps(log_entry)}\n\n"
+            # SSE format: id: <id>\nretry: <ms>\ndata: <json_data>\n\n
+            sse_message = f"id: {log_counter}\nretry: 5000\ndata: {json.dumps(log_entry)}\n\n"
             
             yield sse_message
             
@@ -183,7 +217,7 @@ async def generate_logs() -> AsyncGenerator[str, None]:
                 "time": datetime.utcnow().strftime("%b %d %Y at %I:%M %p")
             }
             
-            error_message = f"data: {json.dumps(error_data)}\n\n"
+            error_message = f"event: error\ndata: {json.dumps(error_data)}\n\n"
             yield error_message
             
             # Continue after error
@@ -191,23 +225,39 @@ async def generate_logs() -> AsyncGenerator[str, None]:
 
 
 @app.get("/logs/stream")
-async def stream_logs():
+async def stream_logs(request: Request):
     """
     SSE endpoint that streams logs every 5 seconds.
     
     Returns:
         StreamingResponse: Server-Sent Events stream of log messages
     """
+    # Optional: simple token auth via Authorization: Bearer <token>
+    auth_header = request.headers.get("authorization")
+    expected_token = os.getenv("SSE_TOKEN")
+    if expected_token:
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        token = auth_header.split(" ", 1)[1]
+        if token != expected_token:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
+
+    last_event_id = request.headers.get("last-event-id")
+
     return StreamingResponse(
-        generate_logs(),
+        generate_logs(last_event_id=last_event_id),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Nginx: disable buffering
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Cache-Control"
+            "Access-Control-Allow-Headers": "Cache-Control, Authorization"
         }
     )
+
+
+
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ const LogStreamer = () => {
     const [connectionStatus, setConnectionStatus] = useState('disconnected')
     const [error, setError] = useState(null)
 
+
     const eventSourceRef = useRef(null)
     const reconnectTimeoutRef = useRef(null)
     const reconnectAttempts = useRef(0)
@@ -124,6 +125,7 @@ const LogStreamer = () => {
         setConnectionStatus('connecting')
         setError(null)
 
+
         try {
             // Create new EventSource connection
             const eventSource = new EventSource(`${backendUrl}/logs/stream`)
@@ -215,6 +217,8 @@ const LogStreamer = () => {
         }
     }
 
+
+
     const disconnect = () => {
         if (eventSourceRef.current) {
             eventSourceRef.current.close()
@@ -230,6 +234,7 @@ const LogStreamer = () => {
         setConnectionStatus('disconnected')
         setError(null)
         reconnectAttempts.current = 0
+
     }
 
     const clearLogs = () => {
@@ -237,6 +242,7 @@ const LogStreamer = () => {
         setGroupedLogs({})
         setToasts([])
         recentToasts.current.clear() // Clear duplicate prevention map
+
     }
 
     const testBackendHealth = async () => {
@@ -277,6 +283,7 @@ const LogStreamer = () => {
                             <Text appearance="subtle" size="small" className="backend-url">
                                 {backendUrl}
                             </Text>
+
                         </div>
                     </Column>
                     <Column size="4">
