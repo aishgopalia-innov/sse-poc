@@ -1,0 +1,30 @@
+{
+    "name": "@datashop/logs-sse-gateway",
+    "version": "1.0.0-poc",
+    "description": "Logs-focused SSE Gateway for Datashop Micro Frontends",
+    "main": "server/logs-gateway.js",
+    "scripts": {
+        "start": "node server/logs-gateway.js",
+        "dev": "nodemon server/logs-gateway.js",
+        "test": "jest"
+    },
+    "keywords": [
+        "sse",
+        "logs",
+        "datashop",
+        "real-time"
+    ],
+    "author": "Datashop Team",
+    "license": "MIT",
+    "dependencies": {
+        "express": "^4.18.2",
+        "cors": "^2.8.5"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1",
+        "jest": "^29.6.4"
+    },
+    "engines": {
+        "node": ">=16.0.0"
+    }
+}
