@@ -1,0 +1,26 @@
+{
+    "name": "@datashop/logs-sse-client",
+    "version": "1.0.0-poc",
+    "description": "React client library for Logs SSE Gateway",
+    "main": "index.js",
+    "scripts": {
+        "test": "jest"
+    },
+    "keywords": [
+        "sse",
+        "logs",
+        "react",
+        "datashop"
+    ],
+    "author": "Datashop Team",
+    "license": "MIT",
+    "peerDependencies": {
+        "react": ">=16.8.0"
+    },
+    "devDependencies": {
+        "jest": "^29.6.4"
+    },
+    "engines": {
+        "node": ">=16.0.0"
+    }
+}

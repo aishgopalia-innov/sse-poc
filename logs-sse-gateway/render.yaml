@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: logs-sse-gateway
+    env: node
+    plan: free
+    buildCommand: npm install --production
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: info
+    # Auto-deploy from main branch
+    autoDeploy: true 
