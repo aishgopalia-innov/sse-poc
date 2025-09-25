@@ -4,8 +4,10 @@
  */
 
 const http = require('http');
+const https = require('https');
 
-const GATEWAY_URL = 'http://localhost:3002';
+// Support both local and deployed gateway
+const GATEWAY_URL = process.env.GATEWAY_URL || 'http://localhost:3002';
 
 // Sample ETL log data for testing
 const generateETLLog = (index) => {
@@ -55,9 +57,12 @@ const publishLogToGateway = (workspaceId, workflowId, logData) => {
             logData: logData
         });
 
+        const url = new URL(GATEWAY_URL);
+        const isHttps = url.protocol === 'https:';
+
         const options = {
-            hostname: 'localhost',
-            port: 3002,
+            hostname: url.hostname,
+            port: url.port || (isHttps ? 443 : 80),
             path: '/api/logs/publish',
             method: 'POST',
             headers: {
@@ -67,7 +72,8 @@ const publishLogToGateway = (workspaceId, workflowId, logData) => {
             }
         };
 
-        const req = http.request(options, (res) => {
+        const requestModule = isHttps ? https : http;
+        const req = requestModule.request(options, (res) => {
             let data = '';
             res.on('data', (chunk) => {
                 data += chunk;

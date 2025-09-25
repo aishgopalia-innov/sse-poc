@@ -304,10 +304,17 @@ class LogsSSEGateway {
 
     start(port = 3002) {
         this.app.listen(port, '0.0.0.0', () => {
+            const isProduction = process.env.NODE_ENV === 'production';
+            const baseUrl = isProduction
+                ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'your-gateway.onrender.com'}`
+                : `http://localhost:${port}`;
+
             console.log(`🚀 Logs SSE Gateway running on port ${port}`);
-            console.log(`📊 Health: http://localhost:${port}/health`);
-            console.log(`🔧 Stats: http://localhost:${port}/admin/logs/stats`);
-            console.log(`🧪 Test: http://localhost:${port}/test/logs`);
+            console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+            console.log(`📊 Health: ${baseUrl}/health`);
+            console.log(`🔧 Stats: ${baseUrl}/admin/logs/stats`);
+            console.log(`🧪 Test: ${baseUrl}/test/logs`);
+            console.log(`📡 SSE Stream: ${baseUrl}/api/logs/stream?channels=logs:etl:workspace123:workflow456`);
         });
     }
 }
